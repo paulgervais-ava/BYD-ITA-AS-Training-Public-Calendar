@@ -1,0 +1,1079 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Calendar Manager v2.0</title>
+
+    <!-- Libraries -->
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ical.js/1.5.0/ical.min.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-dark: #4338ca;
+            --secondary: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .fc-event {
+            cursor: pointer;
+            border: none !important;
+            border-radius: 6px !important;
+        }
+
+        .fc-event-main {
+            padding: 0 !important;
+            /* Managed by inner divs */
+        }
+
+        .type-tech {
+            background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%) !important;
+            color: #1e40af !important;
+            border-left: 4px solid #1e40af !important;
+        }
+
+        .type-nt {
+            background: linear-gradient(135deg, #fce7f3 0%, #fdf2f8 100%) !important;
+            color: #9d174d !important;
+            border-left: 4px solid #9d174d !important;
+        }
+
+        .fc-day-today {
+            background-color: #f0f9ff !important;
+        }
+
+        .fc-button-primary {
+            background-color: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+
+        .fc-button-primary:hover {
+            background-color: var(--primary-dark) !important;
+            border-color: var(--primary-dark) !important;
+        }
+
+        .fc-toolbar-title {
+            font-weight: 700 !important;
+            color: #1f2937 !important;
+        }
+
+        .smooth-shadow {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .event-tooltip {
+            position: absolute;
+            z-index: 100;
+            background: white;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            min-width: 250px;
+            max-width: 300px;
+            display: none;
+        }
+
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 24px;
+            border-radius: 16px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .dragging {
+            opacity: 0.7;
+            transform: rotate(2deg);
+            cursor: grabbing;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .fc-toolbar {
+                flex-direction: column !important;
+                gap: 1rem !important;
+            }
+
+            .fc-toolbar-chunk {
+                width: 100%;
+                text-align: center;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .flex-1 {
+                flex-direction: column;
+            }
+
+            aside {
+                width: 100% !important;
+                height: auto;
+                max-height: 50vh;
+            }
+
+            main {
+                height: 60vh;
+            }
+
+            .fc-header-toolbar {
+                flex-wrap: wrap;
+            }
+
+            .filter-bar {
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .filter-bar select,
+            .filter-bar input {
+                width: calc(50% - 0.5rem);
+            }
+        }
+    </style>
+</head>
+
+<body class="h-screen flex flex-col overflow-hidden">
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+    <!-- Details/Edit Modal -->
+    <div id="modalBackdrop" class="modal-backdrop" onclick="closeModal()"></div>
+    <div id="eventModal" class="modal">
+        <div class="flex flex-col gap-4">
+            <!-- Content will be injected here -->
+        </div>
+    </div>
+
+    <!-- Navbar -->
+    <nav
+        class="bg-gradient-to-r from-gray-900 to-gray-800 text-white p-4 flex justify-between items-center shadow-lg sticky top-0 z-40">
+        <div class="flex items-center gap-3">
+            <div class="bg-indigo-500 p-2 rounded-lg">
+                <i class="fa-solid fa-calendar-days text-white text-xl"></i>
+            </div>
+            <div>
+                <span class="font-bold text-lg">Training Calendar Manager</span>
+                <span class="text-xs bg-indigo-500 px-2 py-1 rounded-full ml-2">v2.1</span>
+            </div>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <input type="text" id="searchInput" placeholder="Search events..."
+                class="px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                onkeyup="searchEvents()">
+
+            <button onclick="document.getElementById('courseInput').click()"
+                class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                <i class="fa-solid fa-database"></i> Load Database
+            </button>
+            <input type="file" id="courseInput" accept=".xlsx,.csv" class="hidden" onchange="loadCourses(this)">
+
+            <button onclick="document.getElementById('icsInput').click()"
+                class="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                <i class="fa-solid fa-file-import"></i> Import ICS
+            </button>
+            <input type="file" id="icsInput" accept=".ics" class="hidden" onchange="importICS(this)">
+
+            <button onclick="exportToExcel()"
+                class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                <i class="fa-solid fa-file-excel"></i> Export Excel
+            </button>
+
+            <button onclick="publish()"
+                class="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 px-6 py-2 rounded-lg font-bold flex items-center gap-2 shadow-lg transition-all hover:scale-105">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Publish
+            </button>
+        </div>
+    </nav>
+
+    <!-- Filter Bar -->
+    <div class="bg-white border-b border-gray-200 p-3 flex items-center gap-3 filter-bar">
+        <div class="flex items-center gap-2 text-gray-700">
+            <i class="fa-solid fa-filter"></i>
+            <span class="font-medium text-sm">Filters:</span>
+        </div>
+
+        <select id="filterType"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            onchange="filterEvents()">
+            <option value="all">All Types</option>
+            <option value="TECH">TECH</option>
+            <option value="NT">Non-Technical</option>
+        </select>
+
+        <select id="filterLocation"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            onchange="filterEvents()">
+            <option value="all">All Locations</option>
+            <option value="Milan">Milan HQ</option>
+            <option value="Rome">Rome Branch</option>
+            <option value="Virtual">Virtual / Teams</option>
+            <option value="TC Generali Jeniot_Via Pisacane, 48, 20016 Pero MI">TC Generali Jeniot</option>
+        </select>
+
+        <input type="month" id="filterMonth"
+            class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            onchange="filterEvents()">
+
+        <button onclick="resetFilters()"
+            class="text-sm text-gray-600 hover:text-gray-900 ml-auto flex items-center gap-1">
+            <i class="fa-solid fa-rotate-right"></i> Reset Filters
+        </button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Sidebar Editor -->
+        <aside
+            class="w-96 bg-gradient-to-b from-white to-gray-50 shadow-2xl z-10 flex flex-col p-6 overflow-y-auto border-r border-gray-200">
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+                    <i class="fa-solid fa-plus-circle text-indigo-500"></i>
+                    Add Training Session
+                </h2>
+                <p class="text-sm text-gray-500">Add new events manually or import from external sources</p>
+            </div>
+
+            <div class="space-y-6">
+                <div class="bg-white p-5 rounded-xl border border-gray-200 smooth-shadow">
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                            <i class="fa-solid fa-graduation-cap text-gray-400"></i>
+                            Course Title
+                        </label>
+                        <input type="text" id="evTitle" list="courseList"
+                            class="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
+                            placeholder="Search or type course name...">
+                        <datalist id="courseList"></datalist>
+                        <div id="courseStatus" class="text-xs text-gray-400 mt-1">Load database to auto-complete</div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Type</label>
+                            <select id="evType"
+                                class="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200">
+                                <option value="TECH">TECH</option>
+                                <option value="NT">Non-Technical</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Location</label>
+                            <select id="evLoc"
+                                class="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200">
+                                <option value="Milan">Milan HQ</option>
+                                <option value="Rome">Rome Branch</option>
+                                <option value="Virtual">Virtual / Teams</option>
+                                <option value="TC Generali Jeniot_Via Pisacane, 48, 20016 Pero MI">TC Generali Jeniot
+                                </option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Start Date & Time</label>
+                        <input type="datetime-local" id="evStart"
+                            class="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">End Date & Time</label>
+                        <input type="datetime-local" id="evEnd"
+                            class="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200">
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Trainer / Notes</label>
+                        <textarea id="evDesc"
+                            class="w-full border-2 border-gray-200 rounded-lg p-3 h-28 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+                            placeholder="Trainer name, specific notes, requirements..."></textarea>
+                    </div>
+
+                    <button onclick="addManualEvent()"
+                        class="w-full bg-gradient-to-r from-gray-900 to-gray-800 hover:from-gray-800 hover:to-gray-700 text-white font-bold py-3 rounded-lg transition-all hover:shadow-lg">
+                        <i class="fa-solid fa-plus mr-2"></i> Add to Calendar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Statistics -->
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <h3 class="font-semibold text-gray-700 mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-chart-bar text-indigo-500"></i>
+                    Calendar Statistics
+                </h3>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-xl stat-card">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                            <div class="text-sm font-medium text-blue-700">TECH Sessions</div>
+                        </div>
+                        <div id="techCount" class="text-2xl font-bold text-blue-900">0</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-pink-50 to-pink-100 p-4 rounded-xl stat-card">
+                        <div class="flex items-center gap-2 mb-1">
+                            <div class="w-3 h-3 rounded-full bg-pink-500"></div>
+                            <div class="text-sm font-medium text-pink-700">NT Sessions</div>
+                        </div>
+                        <div id="ntCount" class="text-2xl font-bold text-pink-900">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Footer -->
+            <div class="mt-auto pt-6 border-t border-gray-200">
+                <div class="flex justify-between items-center mb-4">
+                    <div class="text-sm text-gray-600">
+                        Total Events: <span id="eventCount" class="font-bold text-gray-800">0</span>
+                    </div>
+                </div>
+                <button onclick="clearAll()"
+                    class="w-full bg-gradient-to-r from-red-50 to-red-100 text-red-600 hover:text-red-800 border border-red-200 hover:border-red-300 py-2 rounded-lg text-sm font-medium transition-colors">
+                    <i class="fa-solid fa-trash-can mr-2"></i> Clear All Events
+                </button>
+            </div>
+        </aside>
+
+        <!-- Calendar View -->
+        <main class="flex-1 p-4 md:p-6 relative">
+            <div id='calendar' class="bg-white rounded-2xl shadow-xl border border-gray-100 p-3 md:p-4 h-full"></div>
+        </main>
+    </div>
+
+    <!-- Event Tooltip -->
+    <div id="eventTooltip" class="event-tooltip"></div>
+
+    <script>
+        // Global variables
+        let calendar;
+        let events = JSON.parse(localStorage.getItem('calendar_events') || '[]');
+        let currentEventId = null;
+        let availableLocations = ['Milan', 'Rome', 'Virtual', 'TC Generali Jeniot_Via Pisacane, 48, 20016 Pero MI'];
+        let availableCourses = [];
+
+        // Helper: Format datetime for input[type="datetime-local"]
+        function formatDateTimeLocal(date) {
+            if (!date) return '';
+            const d = new Date(date);
+            const year = d.getFullYear();
+            const month = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            const hours = d.getHours().toString().padStart(2, '0');
+            const minutes = d.getMinutes().toString().padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // Initialize on DOM load
+        document.addEventListener('DOMContentLoaded', function () {
+            initCalendar();
+            updateStatistics();
+            updateCount();
+            updateLocationDropdown();
+
+            // Set default date inputs
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            document.getElementById('evStart').value = formatDateTimeLocal(now);
+            document.getElementById('evEnd').value = formatDateTimeLocal(tomorrow);
+        });
+
+        function initCalendar() {
+            const calendarEl = document.getElementById('calendar');
+            if (!calendarEl) return;
+
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek,listMonth,quarter'
+                },
+                views: {
+                    quarter: {
+                        type: 'multiMonthYear',
+                        duration: { months: 3 },
+                        buttonText: 'Quarter (Q)',
+                        multiMonthMaxColumns: 3,
+                        dayMaxEvents: false,
+                        dayMaxEventRows: false
+                    }
+                },
+                editable: false,
+                droppable: true,
+                selectable: true,
+                dayMaxEvents: 3,
+                events: events,
+                eventClick: function (info) {
+                    showEventModal(info.event);
+                },
+                eventContent: function (arg) {
+                    let type = arg.event.extendedProps.type || 'TECH';
+                    let timeText = arg.timeText || '';
+                    let location = arg.event.extendedProps.location || 'Virtual';
+                    let displayLocation = location; // Show exact full name
+
+                    // Compact view for Quarter
+                    if (arg.view.type === 'quarter' || arg.view.type === 'multiMonthYear') {
+                        return {
+                            html: `<div class='fc-event-main type-${type.toLowerCase()} px-1 py-0.5 rounded overflow-hidden'>
+                                    <div class='font-bold text-[10px] leading-tight truncate'>${arg.event.title}</div>
+                                   </div>`
+                        };
+                    }
+
+                    // Standard view
+                    return {
+                        html: `<div class='fc-event-main type-${type.toLowerCase()} p-1.5'>
+                                <div class='font-bold text-xs truncate'>${arg.event.title}</div>
+                                <div class='text-[10px] opacity-75 truncate mt-0.5'>${displayLocation} • ${timeText}</div>
+                               </div>`
+                    };
+                },
+                eventDrop: function (info) { saveEvents(); showNotification('Event moved', 'info'); },
+                eventResize: function (info) { saveEvents(); showNotification('Duration updated', 'info'); }
+            });
+            calendar.render();
+        }
+
+        // --- Event Modal & Editing ---
+
+        function showEventModal(event) {
+            currentEventId = event.id;
+            const timeStr = event.start ? event.start.toLocaleString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            }) : 'No Date';
+
+            const endStr = event.end ? event.end.toLocaleString(undefined, {
+                weekday: 'short', month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit'
+            }) : '';
+
+            const timeText = endStr ? `${timeStr} - ${endStr}` : timeStr;
+            const location = event.extendedProps.location || 'Virtual';
+            const displayLocation = location; // Show exact full name
+            const type = event.extendedProps.type || 'TECH';
+
+            const modalContent = `
+                <div id="viewMode">
+                    <h3 class="text-xl font-bold text-slate-900 mb-2">${event.title}</h3>
+                    <div class="inline-block px-2 py-1 rounded text-xs font-bold mb-4 ${type === 'TECH' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'}">${type}</div>
+                    
+                    <div class="space-y-3 text-sm text-slate-600 mb-6">
+                        <div class="flex items-start gap-3">
+                            <span class="w-5 text-center mt-0.5">📅</span> 
+                            <span class="flex-1">${timeText}</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="w-5 text-center mt-0.5">📍</span> 
+                            <span class="flex-1">${displayLocation}</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="w-5 text-center mt-0.5">📝</span> 
+                            <span class="flex-1 whitespace-pre-wrap">${event.extendedProps.description || 'No specific notes.'}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button onclick="toggleEditMode()" class="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">
+                            <i class="fa-solid fa-pen-to-square mr-2"></i>Edit
+                        </button>
+                        <button onclick="duplicateEvent()" class="flex-none bg-indigo-100 text-indigo-700 px-4 py-3 rounded-lg font-semibold hover:bg-indigo-200 transition-colors" title="Duplicate Event">
+                             <i class="fa-solid fa-copy"></i>
+                        </button>
+                        <button onclick="closeModal()" class="flex-1 bg-slate-200 text-slate-700 py-3 rounded-lg font-semibold hover:bg-slate-300 transition-colors">
+                            Close
+                        </button>
+                    </div>
+                </div>
+
+                <div id="editMode" style="display:none;" class="space-y-3">
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Edit Session</h3>
+                    
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Title</label>
+                        <input type="text" id="editTitle" class="w-full p-2 border border-slate-300 rounded text-sm font-semibold" value="${event.title}">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">Type</label>
+                            <select id="editType" class="w-full p-2 border border-slate-300 rounded text-sm">
+                                <option value="TECH" ${type === 'TECH' ? 'selected' : ''}>TECH</option>
+                                <option value="NT" ${type === 'NT' ? 'selected' : ''}>NT</option>
+                            </select>
+                        </div>
+                        <div>
+                             <label class="block text-xs font-medium text-slate-500 mb-1">Location</label>
+                             <select id="editLocation" class="w-full p-2 border border-slate-300 rounded text-sm">
+                                ${getLocationOptionsHtml(location)}
+                             </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">Start</label>
+                            <input type="datetime-local" id="editStart" class="w-full p-2 border border-slate-300 rounded text-sm" value="${formatDateTimeLocal(event.start)}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-500 mb-1">End</label>
+                            <input type="datetime-local" id="editEnd" class="w-full p-2 border border-slate-300 rounded text-sm" value="${event.end ? formatDateTimeLocal(event.end) : formatDateTimeLocal(event.start)}">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-500 mb-1">Description</label>
+                        <textarea id="editDescription" class="w-full p-2 border border-slate-300 rounded text-sm" rows="3">${event.extendedProps.description || ''}</textarea>
+                    </div>
+
+                    <div class="flex gap-2 mt-4">
+                        <button onclick="saveEventChanges()" class="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors">
+                            <i class="fa-solid fa-check mr-2"></i>Save
+                        </button>
+                        <button onclick="if(confirm('Delete event?')){deleteEvent();}" class="flex-none bg-red-100 text-red-600 px-4 py-2 rounded-lg font-semibold hover:bg-red-200 transition-colors">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                        <button onclick="toggleEditMode()" class="flex-none bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-semibold hover:bg-slate-300 transition-colors">
+                            Back
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.querySelector('#eventModal .flex-col').innerHTML = modalContent;
+            document.getElementById('modalBackdrop').style.display = 'block';
+            document.getElementById('eventModal').style.display = 'block';
+        }
+
+        function toggleEditMode() {
+            const view = document.getElementById('viewMode');
+            const edit = document.getElementById('editMode');
+            const isViewing = view.style.display !== 'none';
+            view.style.display = isViewing ? 'none' : 'block';
+            edit.style.display = isViewing ? 'block' : 'none';
+        }
+
+        function saveEventChanges() {
+            if (!currentEventId) return;
+
+            const title = document.getElementById('editTitle').value;
+            const type = document.getElementById('editType').value;
+            const loc = document.getElementById('editLocation').value;
+            const start = document.getElementById('editStart').value;
+            const end = document.getElementById('editEnd').value;
+            const desc = document.getElementById('editDescription').value;
+
+            if (!title || !start) { alert('Title and Date required'); return; }
+
+            const event = calendar.getEventById(currentEventId);
+            if (event) {
+                event.setProp('title', title);
+                event.setExtendedProp('type', type);
+                event.setExtendedProp('location', loc);
+                event.setExtendedProp('description', desc);
+                event.setStart(start);
+                event.setEnd(end || start);
+
+                // Update local array
+                const idx = events.findIndex(e => e.id === currentEventId);
+                if (idx > -1) {
+                    events[idx].title = title;
+                    events[idx].start = start;
+                    events[idx].end = end || start;
+                    events[idx].extendedProps.type = type;
+                    events[idx].extendedProps.location = loc;
+                    events[idx].extendedProps.description = desc;
+                    events[idx].classNames = ['type-' + type.toLowerCase()];
+                }
+                saveEvents();
+                showNotification('Event Updated!', 'success');
+                closeModal();
+            }
+        }
+
+        function duplicateEvent() {
+            if (!currentEventId) return;
+            const originalEvent = calendar.getEventById(currentEventId);
+            if (!originalEvent) return;
+
+            const newEvent = {
+                id: 'dup-' + Date.now(),
+                title: originalEvent.title + ' (Copy)',
+                start: originalEvent.startStr,
+                end: originalEvent.endStr,
+                extendedProps: {
+                    type: originalEvent.extendedProps.type,
+                    location: originalEvent.extendedProps.location,
+                    description: originalEvent.extendedProps.description
+                },
+                classNames: ['type-' + originalEvent.extendedProps.type.toLowerCase()]
+            };
+
+            calendar.addEvent(newEvent);
+            events.push(newEvent);
+            saveEvents();
+            showNotification('Event Duplicated!', 'success');
+            closeModal();
+        }
+
+        function deleteEvent() {
+            if (!currentEventId) return;
+            const event = calendar.getEventById(currentEventId);
+            if (event) event.remove();
+            events = events.filter(e => e.id !== currentEventId);
+            saveEvents();
+            showNotification('Event Deleted', 'info');
+            closeModal();
+        }
+
+        function closeModal() {
+            document.getElementById('modalBackdrop').style.display = 'none';
+            document.getElementById('eventModal').style.display = 'none';
+            currentEventId = null;
+        }
+
+        // --- Data Management (Load/Save/Export) ---
+
+        function saveEvents() {
+            // Re-sync events array from calendar source of truth if needed, but managing via 'events' array is safer for custom props
+            localStorage.setItem('calendar_events', JSON.stringify(events));
+            updateStatistics();
+            updateCount();
+        }
+
+        function addManualEvent() {
+            const title = document.getElementById('evTitle').value;
+            const start = document.getElementById('evStart').value;
+            if (!title || !start) { showNotification('Missing Title or Start Date', 'warning'); return; }
+
+            const newEvent = {
+                id: 'man-' + Date.now(),
+                title: title,
+                start: start,
+                end: document.getElementById('evEnd').value || start,
+                extendedProps: {
+                    type: document.getElementById('evType').value,
+                    location: document.getElementById('evLoc').value,
+                    description: document.getElementById('evDesc').value
+                },
+                classNames: ['type-' + document.getElementById('evType').value.toLowerCase()]
+            };
+
+            calendar.addEvent(newEvent);
+            events.push(newEvent);
+            saveEvents();
+            showNotification('Event Added', 'success');
+        }
+
+        function loadCourses(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const wb = XLSX.read(data, { type: 'array' });
+
+                    let courseCount = 0;
+                    let locationCount = 0;
+                    let sessionsCount = 0;
+
+                    // 1. Find and load COURSES sheet for course names
+                    const courseSheetName = wb.SheetNames.find(n =>
+                        n.match(/course|corsi|training/i)
+                    );
+
+                    if (courseSheetName) {
+                        const courses = XLSX.utils.sheet_to_json(wb.Sheets[courseSheetName]);
+                        const datalist = document.getElementById('courseList');
+                        datalist.innerHTML = '';
+
+                        // Extract course names from various possible column names
+                        const courseNames = courses.map(c =>
+                            c.CourseName || c.Name || c.Nome || c.Title || c['Course Name'] || c.Course || c['Course Title']
+                        ).filter(n => n && typeof n === 'string');
+
+                        availableCourses = [...new Set(courseNames)];
+                        availableCourses.sort().forEach(name => {
+                            const opt = document.createElement('option');
+                            opt.value = name;
+                            datalist.appendChild(opt);
+                        });
+
+                        courseCount = availableCourses.length;
+                        document.getElementById('courseStatus').innerText = `${courseCount} courses loaded`;
+                        document.getElementById('courseStatus').className = 'text-xs text-green-600 font-medium mt-1';
+                    } else {
+                        // Fallback: try first sheet
+                        const firstSheet = wb.Sheets[wb.SheetNames[0]];
+                        const courses = XLSX.utils.sheet_to_json(firstSheet);
+                        const datalist = document.getElementById('courseList');
+                        datalist.innerHTML = '';
+
+                        const courseNames = courses.map(c =>
+                            c.CourseName || c.Name || c.Nome || c.Title || c['Course Title']
+                        ).filter(n => n && typeof n === 'string');
+
+                        if (courseNames.length > 0) {
+                            availableCourses = [...new Set(courseNames)];
+                            availableCourses.sort().forEach(name => {
+                                const opt = document.createElement('option');
+                                opt.value = name;
+                                datalist.appendChild(opt);
+                            });
+                            courseCount = availableCourses.length;
+                            document.getElementById('courseStatus').innerText = `${courseCount} courses loaded (from first sheet)`;
+                            document.getElementById('courseStatus').className = 'text-xs text-green-600 font-medium mt-1';
+                        } else {
+                            document.getElementById('courseStatus').innerText = 'No course headers found';
+                            document.getElementById('courseStatus').className = 'text-xs text-yellow-600 font-medium mt-1';
+                        }
+                    }
+
+                    // 2. Find and load SESSIONS sheet for locations
+                    const sessionsSheetName = wb.SheetNames.find(n =>
+                        n.match(/session|sessions|sessione|sessioni|event|events/i)
+                    );
+
+                    if (sessionsSheetName) {
+                        const sessions = XLSX.utils.sheet_to_json(wb.Sheets[sessionsSheetName]);
+                        const locationColumnNames = ['Location', 'Luogo', 'Venue', 'Sede', 'Place', 'Room', 'Sala'];
+                        let sessionLocations = [];
+
+                        sessions.forEach(session => {
+                            locationColumnNames.forEach(colName => {
+                                if (session[colName] && typeof session[colName] === 'string') {
+                                    sessionLocations.push(session[colName].trim());
+                                }
+                            });
+                        });
+
+                        // Parse descriptions for locations
+                        sessions.forEach(session => {
+                            const descFields = ['Description', 'Descrizione', 'Notes', 'Note', 'Details'];
+                            descFields.forEach(field => {
+                                if (session[field] && typeof session[field] === 'string') {
+                                    const desc = session[field].toLowerCase();
+                                    if (desc.includes('milan') || desc.includes('milano')) sessionLocations.push('Milan');
+                                    if (desc.includes('rome') || desc.includes('roma')) sessionLocations.push('Rome');
+                                    if (desc.includes('virtual') || desc.includes('online')) sessionLocations.push('Virtual');
+                                    if (desc.includes('generali') || desc.includes('jeniot')) sessionLocations.push('TC Generali Jeniot_Via Pisacane, 48, 20016 Pero MI');
+                                }
+                            });
+                        });
+
+                        const uniqueSessionLocations = [...new Set(sessionLocations.filter(loc => loc && loc.length > 0))];
+                        // Merge with existing
+                        availableLocations = [...new Set([...availableLocations, ...uniqueSessionLocations])];
+                        updateLocationDropdown();
+
+                        locationCount = uniqueSessionLocations.length;
+                        sessionsCount = sessions.length;
+                    }
+
+                    showNotification(`Loaded ${courseCount} courses and ${locationCount} new locations`, 'success');
+
+                } catch (error) {
+                    showNotification("Error loading file: " + error.message, 'error');
+                    console.error(error);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function importICS(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const jcal = ICAL.parse(e.target.result);
+                    const comp = new ICAL.Component(jcal);
+                    const vevents = comp.getAllSubcomponents('vevent');
+
+                    vevents.forEach(ve => {
+                        const event = new ICAL.Event(ve);
+                        const type = (event.summary.toLowerCase().includes('tech')) ? 'TECH' : 'NT';
+                        const newEvent = {
+                            id: 'ics-' + Date.now() + Math.random(),
+                            title: event.summary,
+                            start: event.startDate.toJSDate().toISOString(),
+                            end: event.endDate.toJSDate().toISOString(),
+                            extendedProps: {
+                                type: type,
+                                location: event.location || 'Virtual',
+                                description: event.description || ''
+                            },
+                            classNames: ['type-' + type.toLowerCase()]
+                        };
+                        calendar.addEvent(newEvent);
+                        events.push(newEvent);
+                    });
+                    saveEvents();
+                    showNotification(`Imported ${vevents.length} events`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    showNotification('Error parsing ICS', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function exportToExcel() {
+            const data = events.map(e => ({
+                Title: e.title,
+                Start: e.start,
+                End: e.end,
+                Type: e.extendedProps.type,
+                Location: e.extendedProps.location,
+                Description: e.extendedProps.description
+            }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Calendar");
+            XLSX.writeFile(wb, "Training_Calendar.xlsx");
+        }
+
+        function clearAll() {
+            if (confirm('Delete ALL events? This cannot be undone.')) {
+                events = [];
+                calendar.removeAllEvents();
+                saveEvents();
+                showNotification('All events cleared', 'neutral');
+            }
+        }
+
+        // --- Stats & UI Utils ---
+
+        function updateStatistics() {
+            const tech = events.filter(e => e.extendedProps.type === 'TECH').length;
+            const nt = events.filter(e => e.extendedProps.type === 'NT').length;
+            document.getElementById('techCount').innerText = tech;
+            document.getElementById('ntCount').innerText = nt;
+        }
+
+        function updateCount() {
+            document.getElementById('eventCount').innerText = events.length;
+        }
+
+        function updateLocationDropdown() {
+            const sel = document.getElementById('evLoc');
+            const currentVal = sel.value;
+            sel.innerHTML = getLocationOptionsHtml(currentVal);
+        }
+
+        function getLocationOptionsHtml(selectedVal) {
+            return availableLocations.map(loc => {
+                const displayText = loc; // Show full name as requested
+                const isSelected = loc === selectedVal ? 'selected' : '';
+                return `<option value="${loc}" ${isSelected}>${displayText}</option>`;
+            }).join('');
+        }
+
+        function showNotification(msg, type) {
+            const div = document.createElement('div');
+            div.className = 'bg-white shadow-lg rounded-lg p-4 border-l-4 border-indigo-500 notification-slide flex items-center gap-3 min-w-[300px]';
+            div.innerHTML = `<i class="fa-solid fa-bell text-indigo-500"></i><span class="font-medium text-gray-800">${msg}</span>`;
+            document.getElementById('notificationContainer').appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+
+        function filterEvents() {
+            const type = document.getElementById('filterType').value;
+            const loc = document.getElementById('filterLocation').value;
+            const monthVal = document.getElementById('filterMonth').value;
+
+            calendar.getEvents().forEach(e => {
+                const eType = e.extendedProps.type || 'TECH';
+                const eLoc = e.extendedProps.location || 'Virtual';
+
+                let visible = true;
+                if (type !== 'all' && eType !== type) visible = false;
+                if (loc !== 'all' && eLoc !== loc) visible = false;
+
+                if (monthVal) {
+                    const eventDate = e.start;
+                    const [mYear, mMonth] = monthVal.split('-');
+                    if (eventDate.getFullYear() !== parseInt(mYear) || (eventDate.getMonth() + 1) !== parseInt(mMonth)) {
+                        visible = false;
+                    }
+                }
+
+                e.setProp('display', visible ? 'auto' : 'none');
+            });
+        }
+
+        function resetFilters() {
+            document.getElementById('filterType').value = 'all';
+            document.getElementById('filterLocation').value = 'all';
+            document.getElementById('filterMonth').value = '';
+            filterEvents();
+        }
+
+        function searchEvents() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            calendar.getEvents().forEach(e => {
+                const match = e.title.toLowerCase().includes(q) || (e.extendedProps.description || '').toLowerCase().includes(q);
+                e.setProp('display', match ? 'auto' : 'none');
+            });
+        }
+
+        // --- Publish Function ---
+        function publish() {
+            if (events.length === 0 && !confirm('Publish empty calendar?')) return;
+
+            const jsonEvents = JSON.stringify(events);
+            const today = new Date().toLocaleDateString();
+
+            // We reconstruct the HTML string ensuring no template literal syntax errors
+            const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Calendar - Published ${today}</title>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'><\/script>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        .type-tech { background-color: #dbeafe !important; color: #1e40af !important; border-left: 4px solid #1e40af !important; }
+        .type-nt { background-color: #fce7f3 !important; color: #9d174d !important; border-left: 4px solid #9d174d !important; }
+        .fc-toolbar-title { font-weight: 800; color: #0f172a; }
+        .fc-button-primary { background-color: #0f172a !important; border: none !important; }
+        .fc-event { cursor: pointer; border: none !important; border-radius: 6px; }
+        .fc-event-main { padding: 0 !important; }
+        /* Modal Styles */
+        .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 999; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 24px; border-radius: 16px; width: 90%; max-width: 500px; z-index: 1000; box-shadow: 0 20px 25px -10px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="p-4 md:p-8 flex flex-col h-screen">
+    <header class="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-800">Training Calendar</h1>
+            <p class="text-sm text-slate-500">Official Schedule • ${today}</p>
+        </div>
+        <div class="flex gap-2">
+            <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded font-bold text-xs">TECH</span>
+            <span class="px-3 py-1 bg-pink-100 text-pink-800 rounded font-bold text-xs">NT</span>
+        </div>
+    </header>
+    
+    <div id="calendar" class="flex-1 bg-white rounded-xl shadow-lg border border-gray-100 p-4"></div>
+
+    <!-- Read-Only Modal -->
+    <div id="modalBackdrop" class="modal-backdrop" onclick="closeModal()"></div>
+    <div id="eventModal" class="modal">
+        <h3 id="mTitle" class="text-xl font-bold mb-2"></h3>
+        <span id="mType" class="inline-block px-2 py-1 rounded text-xs font-bold mb-4"></span>
+        <div class="space-y-2 text-sm text-gray-600 mb-6">
+            <div>📅 <span id="mTime"></span></div>
+            <div>📍 <span id="mLoc"></span></div>
+            <div>📝 <span id="mDesc"></span></div>
+        </div>
+        <button onclick="closeModal()" class="w-full bg-slate-900 text-white py-3 rounded-lg font-bold">Close</button>
+    </div>
+
+    <script>
+        const events = ${jsonEvents};
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            var calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
+                initialView: 'dayGridMonth',
+                headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth,quarter' },
+                views: {
+                    quarter: { type: 'multiMonthYear', duration: { months: 3 }, buttonText: 'Quarter', dayMaxEvents: false }
+                },
+                events: events,
+                eventClick: function(info) { showModal(info.event); },
+                eventContent: function(arg) {
+                    let type = arg.event.extendedProps.type || 'TECH';
+                    // Compact for Quarter
+                    if (arg.view.type === 'quarter' || arg.view.type === 'multiMonthYear') {
+                        return { html: '<div class="fc-event-main type-' + type.toLowerCase() + ' px-1 py-0.5 rounded"><div class="font-bold text-[10px] truncate">' + arg.event.title + '</div></div>' };
+                    }
+                    return { html: '<div class="fc-event-main type-' + type.toLowerCase() + ' p-1.5"><div class="font-bold text-xs truncate">' + arg.event.title + '</div></div>' };
+                }
+            });
+            calendar.render();
+        });
+
+        function showModal(event) {
+            document.getElementById('mTitle').innerText = event.title;
+            const type = event.extendedProps.type || 'TECH';
+            const badge = document.getElementById('mType');
+            badge.innerText = type;
+            badge.className = 'inline-block px-2 py-1 rounded text-xs font-bold mb-4 ' + (type === 'TECH' ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800');
+            
+            document.getElementById('mTime').innerText = event.start.toLocaleString();
+            document.getElementById('mLoc').innerText = event.extendedProps.location || 'Virtual';
+            document.getElementById('mDesc').innerText = event.extendedProps.description || '';
+            
+            document.getElementById('modalBackdrop').style.display = 'block';
+            document.getElementById('eventModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('modalBackdrop').style.display = 'none';
+            document.getElementById('eventModal').style.display = 'none';
+        }
+    <\/script>
+</body>
+</html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'training_calendar_public.html';
+            a.click();
+            showNotification('Calendar Published!', 'success');
+        }
+    </script>
+</body>
+
+</html>
